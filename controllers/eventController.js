@@ -39,11 +39,10 @@ exports.createEvent = async (req, res) => {
       invitees = inviteeIds
         .split(",")
         .map((x) => x.trim())
-        .filter((x) => x);
+        .filter(Boolean);
     } else if (Array.isArray(inviteeIds)) {
-      invitees = inviteeIds.map((x) => x.toString().trim()).filter((x) => x);
+      invitees = inviteeIds.map((x) => x.toString().trim()).filter(Boolean);
     }
-    // Remove any invitee that matches the host (by id or email)
     invitees = invitees.filter((x) => {
       if (x === hostId.toString()) return false;
       if (req.user.email && x.toLowerCase() === req.user.email.toLowerCase())
@@ -51,9 +50,7 @@ exports.createEvent = async (req, res) => {
       return true;
     });
 
-    // <-- FIX: Deduplicate the processed invitees array (not inviteeIds)
     invitees = Array.from(new Set(invitees));
-    // Add the host once at the beginning
     invitees.unshift(hostId.toString());
 
     let participants = [];
@@ -69,7 +66,6 @@ exports.createEvent = async (req, res) => {
         }
       }
     }
-    // Ensure host's status is "Accepted"
     participants = participants.map((p) => {
       if (p.user.toString() === hostId.toString()) {
         return { user: hostId, status: "Accepted" };
@@ -137,8 +133,15 @@ exports.updateEvent = async (req, res) => {
         .status(404)
         .json({ message: "Event not found or not authorized" });
     }
-    const { title, description, startTime, endTime, password, hostName } =
-      req.body;
+    const {
+      title,
+      description,
+      startTime,
+      endTime,
+      password,
+      hostName,
+      inviteeIds,
+    } = req.body;
     const start = startTime ? dayjs(startTime).toDate() : null;
     const end = endTime ? dayjs(endTime).toDate() : null;
 
@@ -155,6 +158,48 @@ exports.updateEvent = async (req, res) => {
     if (end) event.endTime = end;
     if (password) event.password = password;
     if (hostName) event.hostName = hostName;
+
+    if (inviteeIds) {
+      let invitees = [];
+      if (typeof inviteeIds === "string") {
+        invitees = inviteeIds
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean);
+      } else if (Array.isArray(inviteeIds)) {
+        invitees = inviteeIds.map((x) => x.toString().trim()).filter(Boolean);
+      }
+      invitees = invitees.filter((x) => {
+        if (x === hostId.toString()) return false;
+        if (req.user.email && x.toLowerCase() === req.user.email.toLowerCase())
+          return false;
+        return true;
+      });
+      invitees = Array.from(new Set(invitees));
+      invitees.unshift(hostId.toString());
+
+      let participants = [];
+      for (const idOrEmail of invitees) {
+        if (mongoose.Types.ObjectId.isValid(idOrEmail)) {
+          participants.push({ user: idOrEmail, status: "Pending" });
+        } else {
+          const invitedUser = await User.findOne({ email: idOrEmail });
+          if (invitedUser) {
+            participants.push({ user: invitedUser._id, status: "Pending" });
+          } else {
+            console.warn(`No user found for email: ${idOrEmail}`);
+          }
+        }
+      }
+      participants = participants.map((p) => {
+        if (p.user.toString() === hostId.toString()) {
+          return { user: hostId, status: "Accepted" };
+        }
+        return p;
+      });
+
+      event.participants = participants;
+    }
 
     await event.save();
     res.json(event);

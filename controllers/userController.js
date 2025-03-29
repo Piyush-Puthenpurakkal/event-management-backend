@@ -15,7 +15,7 @@ exports.getProfile = async (req, res) => {
 
 exports.updateProfile = async (req, res) => {
   try {
-    const { firstName, lastName, email, password } = req.body;
+    const { firstName, lastName, email, password, username } = req.body;
 
     const user = await User.findById(req.user._id);
     if (!user) {
@@ -25,11 +25,13 @@ exports.updateProfile = async (req, res) => {
     if (email) user.email = email;
     if (firstName) user.firstName = firstName;
     if (lastName) user.lastName = lastName;
+    if (username) user.username = username;
     if (password) user.password = password;
 
     await user.save();
     res.json({
       message: "Profile updated. Please re-login if email/password changed.",
+      user,
     });
   } catch (error) {
     console.error("Update profile error:", error);

@@ -3,6 +3,7 @@ const User = require("../models/User");
 const Booking = require("../models/Booking");
 const dayjs = require("dayjs");
 const mongoose = require("mongoose");
+const { generateMeetingLink } = require("../utils/meetingUtils"); // Utility for meeting link
 
 async function hasConflict(userId, startTime, endTime, eventId = null) {
   const conflict = await Event.findOne({
@@ -13,6 +14,7 @@ async function hasConflict(userId, startTime, endTime, eventId = null) {
   return !!conflict;
 }
 
+// Create Event with Meeting Link and Banner
 exports.createEvent = async (req, res) => {
   try {
     const hostId = req.user._id;
@@ -24,6 +26,7 @@ exports.createEvent = async (req, res) => {
       password,
       inviteeIds,
       hostName,
+      bannerUrl, // New field for banner
     } = req.body;
 
     const start = dayjs(startTime).toDate();
@@ -34,44 +37,21 @@ exports.createEvent = async (req, res) => {
       return res.status(400).json({ message: "Time conflict detected" });
     }
 
-    let invitees = [];
-    if (typeof inviteeIds === "string") {
-      invitees = inviteeIds
-        .split(",")
-        .map((x) => x.trim())
-        .filter(Boolean);
-    } else if (Array.isArray(inviteeIds)) {
-      invitees = inviteeIds.map((x) => x.toString().trim()).filter(Boolean);
-    }
-    invitees = invitees.filter((x) => {
-      if (x === hostId.toString()) return false;
-      if (req.user.email && x.toLowerCase() === req.user.email.toLowerCase())
-        return false;
-      return true;
-    });
+    let invitees = Array.isArray(inviteeIds)
+      ? inviteeIds.map((x) => x.toString().trim()).filter(Boolean)
+      : [];
 
-    invitees = Array.from(new Set(invitees));
-    invitees.unshift(hostId.toString());
+    invitees = invitees.filter((x) => x !== hostId.toString());
 
-    let participants = [];
-    for (const idOrEmail of invitees) {
-      if (mongoose.Types.ObjectId.isValid(idOrEmail)) {
-        participants.push({ user: idOrEmail, status: "Pending" });
-      } else {
-        const invitedUser = await User.findOne({ email: idOrEmail });
-        if (invitedUser) {
-          participants.push({ user: invitedUser._id, status: "Pending" });
-        } else {
-          console.warn(`No user found for email: ${idOrEmail}`);
-        }
-      }
-    }
-    participants = participants.map((p) => {
-      if (p.user.toString() === hostId.toString()) {
-        return { user: hostId, status: "Accepted" };
-      }
-      return p;
-    });
+    let participants = invitees.map((id) => ({
+      user: mongoose.Types.ObjectId.isValid(id) ? id : null,
+      status: "Pending",
+    }));
+
+    participants.unshift({ user: hostId, status: "Accepted" });
+
+    // Generate Meeting Link
+    const meetingLink = generateMeetingLink();
 
     const newEvent = await Event.create({
       user: hostId,
@@ -82,9 +62,11 @@ exports.createEvent = async (req, res) => {
       endTime: end,
       password,
       participants,
+      bannerUrl, // Store banner URL
+      meetingLink, // Store generated meeting link
     });
 
-    const bookingData = {
+    await Booking.create({
       user: hostId,
       eventId: newEvent._id,
       hostName,
@@ -99,9 +81,7 @@ exports.createEvent = async (req, res) => {
         user: p.user,
         status: p.status,
       })),
-    };
-
-    await Booking.create(bookingData);
+    });
 
     res.status(201).json(newEvent);
   } catch (error) {
@@ -110,29 +90,11 @@ exports.createEvent = async (req, res) => {
   }
 };
 
-exports.getEvents = async (req, res) => {
-  try {
-    const hostId = req.user._id;
-    const events = await Event.find({
-      $or: [{ user: hostId }, { "participants.user": hostId }],
-    }).populate("participants.user", "firstName lastName email avatar");
-    res.json(events);
-  } catch (error) {
-    console.error("Get events error:", error);
-    res.status(500).json({ message: "Server error" });
-  }
-};
-
+// Update Event - Supports Banner and Meeting Link Update
 exports.updateEvent = async (req, res) => {
   try {
     const hostId = req.user._id;
     const { id } = req.params;
-    const event = await Event.findOne({ _id: id, user: hostId });
-    if (!event) {
-      return res
-        .status(404)
-        .json({ message: "Event not found or not authorized" });
-    }
     const {
       title,
       description,
@@ -140,66 +102,31 @@ exports.updateEvent = async (req, res) => {
       endTime,
       password,
       hostName,
-      inviteeIds,
+      bannerUrl,
     } = req.body;
-    const start = startTime ? dayjs(startTime).toDate() : null;
-    const end = endTime ? dayjs(endTime).toDate() : null;
 
-    if (start && end) {
+    const event = await Event.findOne({ _id: id, user: hostId });
+    if (!event)
+      return res
+        .status(404)
+        .json({ message: "Event not found or not authorized" });
+
+    if (startTime && endTime) {
+      const start = dayjs(startTime).toDate();
+      const end = dayjs(endTime).toDate();
       const conflict = await hasConflict(hostId, start, end, id);
-      if (conflict) {
+      if (conflict)
         return res.status(400).json({ message: "Time conflict detected" });
-      }
+
+      event.startTime = start;
+      event.endTime = end;
     }
 
     if (title) event.title = title;
     if (description) event.description = description;
-    if (start) event.startTime = start;
-    if (end) event.endTime = end;
     if (password) event.password = password;
     if (hostName) event.hostName = hostName;
-
-    if (inviteeIds) {
-      let invitees = [];
-      if (typeof inviteeIds === "string") {
-        invitees = inviteeIds
-          .split(",")
-          .map((x) => x.trim())
-          .filter(Boolean);
-      } else if (Array.isArray(inviteeIds)) {
-        invitees = inviteeIds.map((x) => x.toString().trim()).filter(Boolean);
-      }
-      invitees = invitees.filter((x) => {
-        if (x === hostId.toString()) return false;
-        if (req.user.email && x.toLowerCase() === req.user.email.toLowerCase())
-          return false;
-        return true;
-      });
-      invitees = Array.from(new Set(invitees));
-      invitees.unshift(hostId.toString());
-
-      let participants = [];
-      for (const idOrEmail of invitees) {
-        if (mongoose.Types.ObjectId.isValid(idOrEmail)) {
-          participants.push({ user: idOrEmail, status: "Pending" });
-        } else {
-          const invitedUser = await User.findOne({ email: idOrEmail });
-          if (invitedUser) {
-            participants.push({ user: invitedUser._id, status: "Pending" });
-          } else {
-            console.warn(`No user found for email: ${idOrEmail}`);
-          }
-        }
-      }
-      participants = participants.map((p) => {
-        if (p.user.toString() === hostId.toString()) {
-          return { user: hostId, status: "Accepted" };
-        }
-        return p;
-      });
-
-      event.participants = participants;
-    }
+    if (bannerUrl) event.bannerUrl = bannerUrl; // Update banner URL
 
     await event.save();
     res.json(event);
@@ -209,41 +136,71 @@ exports.updateEvent = async (req, res) => {
   }
 };
 
-exports.deleteEvent = async (req, res) => {
+// Edit User Profile
+exports.editProfile = async (req, res) => {
   try {
-    const hostId = req.user._id;
-    const { id } = req.params;
-    const deletedEvent = await Event.findOneAndDelete({
-      _id: id,
-      user: hostId,
-    });
-    if (!deletedEvent) {
-      return res
-        .status(404)
-        .json({ message: "Event not found or not authorized" });
-    }
-    await Booking.findOneAndUpdate(
-      { eventId: id },
-      { status: "Canceled" },
-      { new: true }
-    );
-    res.json({
-      message: "Event deleted and associated bookings updated to Canceled",
-    });
+    const { firstName, lastName, email, avatar } = req.body;
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    if (firstName) user.firstName = firstName;
+    if (lastName) user.lastName = lastName;
+    if (email) user.email = email;
+    if (avatar) user.avatar = avatar;
+
+    await user.save();
+    res.json({ message: "Profile updated successfully", user });
   } catch (error) {
-    console.error("Delete event error:", error);
+    console.error("Edit profile error:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
 
+// Generate and Update Meeting Link
+exports.updateMeetingLink = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const hostId = req.user._id;
+
+    const event = await Event.findOne({ _id: id, user: hostId });
+    if (!event) return res.status(404).json({ message: "Event not found" });
+
+    event.meetingLink = generateMeetingLink(); // Generate new meeting link
+    await event.save();
+
+    res.json({
+      message: "Meeting link updated",
+      meetingLink: event.meetingLink,
+    });
+  } catch (error) {
+    console.error("Update meeting link error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// Get Events with Profile Data
+exports.getEvents = async (req, res) => {
+  try {
+    const hostId = req.user._id;
+    const events = await Event.find({
+      $or: [{ user: hostId }, { "participants.user": hostId }],
+    }).populate("participants.user", "firstName lastName email avatar");
+
+    res.json(events);
+  } catch (error) {
+    console.error("Get events error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// Toggle Event Active Status
 exports.toggleEventActive = async (req, res) => {
   try {
     const hostId = req.user._id;
     const { id } = req.params;
     const event = await Event.findOne({ _id: id, user: hostId });
-    if (!event) {
-      return res.status(404).json({ message: "Event not found" });
-    }
+    if (!event) return res.status(404).json({ message: "Event not found" });
+
     event.isActive = !event.isActive;
     await event.save();
     res.json({

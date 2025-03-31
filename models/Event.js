@@ -25,6 +25,9 @@ const eventSchema = new mongoose.Schema({
   },
   password: String,
   color: String,
+  bannerColor: { type: String, default: "#ffffff" },
+  titleColor: { type: String, default: "#000000" },
+  linkColor: { type: String, default: "#0000ff" },
   participants: [
     {
       user: {

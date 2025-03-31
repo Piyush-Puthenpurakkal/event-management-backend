@@ -27,6 +27,8 @@ exports.createEvent = async (req, res) => {
       bannerColor,
       titleColor,
       linkColor,
+      bannerName, // ✅ NEW: Get banner name
+      meetingLink, // ✅ NEW: Get meeting link
     } = req.body;
 
     const start = dayjs(startTime).toDate();
@@ -46,6 +48,7 @@ exports.createEvent = async (req, res) => {
     } else if (Array.isArray(inviteeIds)) {
       invitees = inviteeIds.map((x) => x.toString().trim()).filter(Boolean);
     }
+
     invitees = invitees.filter((x) => {
       if (x === hostId.toString()) return false;
       if (req.user.email && x.toLowerCase() === req.user.email.toLowerCase())
@@ -64,11 +67,10 @@ exports.createEvent = async (req, res) => {
         const invitedUser = await User.findOne({ email: idOrEmail });
         if (invitedUser) {
           participants.push({ user: invitedUser._id, status: "Pending" });
-        } else {
-          console.warn(`No user found for email: ${idOrEmail}`);
         }
       }
     }
+
     participants = participants.map((p) => {
       if (p.user.toString() === hostId.toString()) {
         return { user: hostId, status: "Accepted" };
@@ -87,6 +89,8 @@ exports.createEvent = async (req, res) => {
       bannerColor,
       titleColor,
       linkColor,
+      bannerName, // ✅ NEW: Save banner name
+      meetingLink, // ✅ NEW: Save meeting link
       participants,
     });
 
@@ -116,6 +120,7 @@ exports.updateEvent = async (req, res) => {
     const hostId = req.user._id;
     const { id } = req.params;
     const event = await Event.findOne({ _id: id, user: hostId });
+
     if (!event) {
       return res
         .status(404)
@@ -133,6 +138,8 @@ exports.updateEvent = async (req, res) => {
       bannerColor,
       titleColor,
       linkColor,
+      bannerName, // ✅ NEW: Update banner name
+      meetingLink, // ✅ NEW: Update meeting link
     } = req.body;
 
     if (title) event.title = title;
@@ -144,6 +151,8 @@ exports.updateEvent = async (req, res) => {
     if (bannerColor) event.bannerColor = bannerColor;
     if (titleColor) event.titleColor = titleColor;
     if (linkColor) event.linkColor = linkColor;
+    if (bannerName) event.bannerName = bannerName; // ✅ NEW
+    if (meetingLink) event.meetingLink = meetingLink; // ✅ NEW
 
     if (inviteeIds) {
       let invitees = [];
@@ -155,12 +164,14 @@ exports.updateEvent = async (req, res) => {
       } else if (Array.isArray(inviteeIds)) {
         invitees = inviteeIds.map((x) => x.toString().trim()).filter(Boolean);
       }
+
       invitees = invitees.filter((x) => {
         if (x === hostId.toString()) return false;
         if (req.user.email && x.toLowerCase() === req.user.email.toLowerCase())
           return false;
         return true;
       });
+
       invitees = Array.from(new Set(invitees));
       invitees.unshift(hostId.toString());
 
@@ -172,11 +183,10 @@ exports.updateEvent = async (req, res) => {
           const invitedUser = await User.findOne({ email: idOrEmail });
           if (invitedUser) {
             participants.push({ user: invitedUser._id, status: "Pending" });
-          } else {
-            console.warn(`No user found for email: ${idOrEmail}`);
           }
         }
       }
+
       participants = participants.map((p) => {
         if (p.user.toString() === hostId.toString()) {
           return { user: hostId, status: "Accepted" };

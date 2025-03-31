@@ -28,6 +28,8 @@ const eventSchema = new mongoose.Schema({
   bannerColor: { type: String, default: "#ffffff" },
   titleColor: { type: String, default: "#000000" },
   linkColor: { type: String, default: "#0000ff" },
+  bannerName: { type: String, default: "Meeting Title" },
+  meetingLink: { type: String, default: "" },
   participants: [
     {
       user: {

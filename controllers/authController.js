@@ -1,6 +1,5 @@
 const User = require("../models/User");
 const jwt = require("jsonwebtoken");
-const bcrypt = require("bcrypt");
 
 exports.registerUser = async (req, res) => {
   try {
@@ -9,14 +8,14 @@ exports.registerUser = async (req, res) => {
     if (existingUser) {
       return res.status(400).json({ message: "User already exists" });
     }
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await User.create({
+    const user = new User({
       email,
-      password: hashedPassword,
+      password,
       firstName,
       lastName,
       username,
     });
+    await user.save();
     res.status(201).json({ message: "User registered successfully" });
   } catch (error) {
     console.error("Register error:", error);
@@ -31,7 +30,7 @@ exports.loginUser = async (req, res) => {
     if (!user) {
       return res.status(400).json({ message: "Invalid credentials" });
     }
-    const isMatch = await bcrypt.compare(password, user.password);
+    const isMatch = await user.matchPassword(password);
     if (!isMatch) {
       return res.status(400).json({ message: "Invalid credentials" });
     }

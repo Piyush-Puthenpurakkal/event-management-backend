@@ -26,7 +26,10 @@ exports.updateProfile = async (req, res) => {
     if (firstName) user.firstName = firstName;
     if (lastName) user.lastName = lastName;
     if (username) user.username = username;
-    if (password) user.password = password;
+    if (password) {
+      const hashedPassword = await bcrypt.hash(password, 10);
+      user.password = hashedPassword;
+    }
 
     await user.save();
     res.json({

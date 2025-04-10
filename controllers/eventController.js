@@ -217,6 +217,13 @@ exports.updateEvent = async (req, res) => {
     }
 
     await event.save();
+
+    await Booking.findOneAndUpdate(
+      { eventId: event._id },
+      { participants: event.participants },
+      { new: true }
+    );
+
     res.json(event);
   } catch (error) {
     console.error("Update event error:", error);

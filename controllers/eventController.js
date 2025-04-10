@@ -27,8 +27,8 @@ exports.createEvent = async (req, res) => {
       bannerColor,
       titleColor,
       linkColor,
-      bannerName, // ✅ NEW: Get banner name
-      meetingLink, // ✅ NEW: Get meeting link
+      bannerName,
+      meetingLink,
     } = req.body;
 
     const start = dayjs(startTime).toDate();
@@ -89,10 +89,29 @@ exports.createEvent = async (req, res) => {
       bannerColor,
       titleColor,
       linkColor,
-      bannerName, // ✅ NEW: Save banner name
-      meetingLink, // ✅ NEW: Save meeting link
+      bannerName,
+      meetingLink,
       participants,
     });
+
+    const booking = new Booking({
+      user: hostId,
+      eventId: newEvent._id,
+      hostName,
+      title,
+      details: description,
+      startTime: start,
+      endTime: end,
+      dateLabel: dayjs(start).format("YYYY-MM-DD"),
+      timeLabel: dayjs(start).format("HH:mm"),
+      status: "Pending",
+      participants: participants.map((p) => ({
+        user: p.user,
+        status: p.status,
+      })),
+    });
+
+    await booking.save();
 
     res.status(201).json(newEvent);
   } catch (error) {
@@ -138,8 +157,8 @@ exports.updateEvent = async (req, res) => {
       bannerColor,
       titleColor,
       linkColor,
-      bannerName, // ✅ NEW: Update banner name
-      meetingLink, // ✅ NEW: Update meeting link
+      bannerName,
+      meetingLink,
     } = req.body;
 
     if (title) event.title = title;
@@ -151,8 +170,8 @@ exports.updateEvent = async (req, res) => {
     if (bannerColor) event.bannerColor = bannerColor;
     if (titleColor) event.titleColor = titleColor;
     if (linkColor) event.linkColor = linkColor;
-    if (bannerName) event.bannerName = bannerName; // ✅ NEW
-    if (meetingLink) event.meetingLink = meetingLink; // ✅ NEW
+    if (bannerName) event.bannerName = bannerName;
+    if (meetingLink) event.meetingLink = meetingLink;
 
     if (inviteeIds) {
       let invitees = [];
